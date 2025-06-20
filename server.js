@@ -62,23 +62,38 @@ app.post("/homepageSearch",  async(req, res) => {
   async function queryToMongo(searchPrompt) {
     const genAI = new GoogleGenAI({ apiKey: ai_api });
 
-const prompt = `Generate a MongoDB query filter (not projection) that can be passed into collection.find(<query>) to retrieve full documents.
+const prompt = `
+Generate a MongoDB query filter (not projection) for use in collection.find(<query>) to retrieve full documents.
 
 Input:
 - A user's search phrase (e.g., "antique chair under $300").
 
+Database Notes:
+- Titles are stored in the 'Title' field.
+- Prices are stored in the 'Price' field as **strings**, e.g., "$250", not numbers.
+- Use case-insensitive regex to match title words.
+- For price filtering:
+  - Extract the number from 'Price' string using regex in the MongoDB query.
+  - Match prices using regex to simulate comparisons:
+    - "under $300" ➜ Match strings like "$0" to "$299"
+    - "over $100" ➜ Match strings like "$101" and above
+    - "between $50 and $150" ➜ Match strings from "$50" to "$150"
+
 Instructions:
-- Match the 'title' field by splitting the input into words (excluding price-related words), and create a case-insensitive regex for each word. Combine them with $and.
-  Example: "comic book" ➜ { "$and": [ { "title": { "$regex": "comic", "$options": "i" } }, { "title": { "$regex": "book", "$options": "i" } } ] }
+- Use '$and' to combine multiple regex matches on 'Title'.
+- For price matching, use '$regex' on the 'Price' field.
+- Only return a valid JSON query filter, no markdown, no extra text.
+- Your result must be parseable JSON starting with '{'.
 
-- Match the 'price' field based on common language patterns:
-  - "under $300" ➜ { "price": { "$lte": 300 } }
-  - "over $100" ➜ { "price": { "$gte": 100 } }
-  - "between $50 and $150" ➜ { "price": { "$gte": 50, "$lte": 150 } }
-
-- Return a single JSON object, with no extra text or code blocks.
-- All regular expressions must use "$regex": "word", not /word/.
-- Only output a parsable JSON object starting with '{'.
+Example:
+"antique chair under $300" ➜
+{
+  "$and": [
+    { "Title": { "$regex": "antique", "$options": "i" } },
+    { "Title": { "$regex": "chair", "$options": "i" } },
+    { "Price": { "$regex": "^\\$([12]?\\d{1,2})$", "$options": "i" } }
+  ]
+}
 `;
 const result = await genAI.models.generateContent({
   model: "gemini-1.5-pro",
