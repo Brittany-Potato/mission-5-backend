@@ -62,23 +62,24 @@ app.post("/homepageSearch",  async(req, res) => {
   async function queryToMongo(searchPrompt) {
     const genAI = new GoogleGenAI({ apiKey: ai_api });
 
-    const prompt = `Search the Mongo database for a MongoDB query object for a collection with fields: title, location, condition, payment, shipping, price, clearance. Use exact field names and correct casing.
-    For string fields like 'title', split the uer's input text into individual words (split by spaces or punctuation). For each word, generate a case-insensitive regex query that matches titles containing the word anywhere
-    Combine all these regex queries using $and, so all words must be present in the title, in any order.
-    
-    for example:
-    Input: "comic book"
-    Output:
-    {
-      $and: [
-      {title: { $regex: /comic/i } },
-      {title: { $regex: /book/i } }
-      ]
-    }
-      For numeric fields like "price" parse phrases like "over $100" or "under $50" and generate appropriate range queries.
-      ONLY output valid JSON data with no explanations, no additional text, and no code blocks. The output must be parsable JSON starting with '[' or'{'.
-`;
+const prompt = `Generate a MongoDB query filter (not projection) that can be passed into collection.find(<query>) to retrieve full documents.
 
+Input:
+- A user's search phrase (e.g., "antique chair under $300").
+
+Instructions:
+- Match the 'title' field by splitting the input into words (excluding price-related words), and create a case-insensitive regex for each word. Combine them with $and.
+  Example: "comic book" ➜ { "$and": [ { "title": { "$regex": "comic", "$options": "i" } }, { "title": { "$regex": "book", "$options": "i" } } ] }
+
+- Match the 'price' field based on common language patterns:
+  - "under $300" ➜ { "price": { "$lte": 300 } }
+  - "over $100" ➜ { "price": { "$gte": 100 } }
+  - "between $50 and $150" ➜ { "price": { "$gte": 50, "$lte": 150 } }
+
+- Return a single JSON object, with no extra text or code blocks.
+- All regular expressions must use "$regex": "word", not /word/.
+- Only output a parsable JSON object starting with '{'.
+`;
 const result = await genAI.models.generateContent({
   model: "gemini-1.5-pro",
   contents: prompt,
