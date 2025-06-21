@@ -36,6 +36,31 @@ app.post("/echo", (req, res) => {
 
 //? ~ Brittany ~
 
+app.post("/countItems", async (req, res) => {
+  const { title } = req.body; 
+
+  if (!title) {
+    return res.status(400).json({ error: "Title query parameter is required"});
+  }
+
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    const count = await collection.countDocuments({ // Counts all the documents that match what the user typed
+      Title: { $regex: title, $options: "i" } // Match case-insensitive
+    });
+
+    res.json({ title, count});
+  } catch (err) {
+    console.error("Error counting items:", err.message);
+  } finally {
+    client.close();
+  }
+});
+
+
 app.post("/homepageSearch", async (req, res) => {
   console.log("Search request received:", req.body);
   const searchText = req.body.search;
