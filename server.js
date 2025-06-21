@@ -93,12 +93,15 @@ Instructions:
    - If it refers to a field (e.g., "PayPal" ➜ Payment), match that field using a case-insensitive "$regex".
    - Combine multiple conditions using "$and".
 
-3. Price handling:
-   - "under $300" ➜ match "Price" values where the numeric part is <= 300 using regex.
-   - "over $100" ➜ match where numeric part is >= 100.
-   - "between $50 and $150" ➜ match values in that range.
-   - Since Price is a string like "$250", use regex to simulate number ranges.
-   - Example: { "Price": { "$regex": "^\\$([1-9][0-9]{0,2})$", "$options": "i" } }
+3. IMPORTANT Price handling:
+  - "over $200" ➜ match "Price" values where the numeric part is >= 200 using regex.
+  - "between $50 and $100" ➜ match values in that range.
+  - "between $100 and $200" ➜ match values in that range, For $100–$200, use:
+      { "Price": { "$regex": "^\\$(1[0-9]{2}|200)$", "$options": "i" } }
+
+  - "between $0 and $50" ➜ match values in that range.
+  - Since Price is a string like "$250", use regex to simulate number ranges.
+  - Example: { "Price": { "$regex": "^\\$([1-9][0-9]{0,2})$", "$options": "i" } }
 
 4. Clearance:
    - If the phrase includes "clearance", match { "Clearance": "True" }
@@ -118,11 +121,29 @@ Expected JSON output:
     { "Location": { "$regex": "London", "$options": "i" } },
     { "Payment": { "$regex": "PayPal", "$options": "i" } },
     { "Shipping": { "$regex": "shipping", "$options": "i" } },
-    { "Price": { "$regex": "^\\$([1-9][0-9]{0,2}|300)$", "$options": "i" } }
+    { "Price": { "$regex": "^\\$(1[0-9]{2}|200)$", "$options": "i" } }
   ]
 }
+  The regular expressions you're generating (e.g., ^\$([5-9][0-9]|100)$) are correct in terms of logic, but invalid JSON strings due to unescaped backslashes.
+
+  This is a correct response as an example: {
+  "$and": [
+    {
+      "Price": {
+        "$regex": "^\\$([5-9][0-9]|100)$",  // Match $100–$200 <-- NO EXTRA BACKSLASHES PLEASE
+        "$options": "i"
+      }
+    }
+  ]
+}
+Do NOT use too many backslashes like in this example: "Price": {"$regex": "^\\\$([1-9][0-9]{2}|[1-1][0-9]{2}|200)$", "$options": "i"}
+
+Do NOT repeat the mistake of overlapping or incorrect ranges like: [1-9][0-9]{2}|[1-1][0-9]{2}|200 .
+
+Escape your backslashes where necessary.
 
 User input: "${searchPrompt}"`
+
     const result = await genAI.models.generateContent({
       model: "gemini-1.5-pro",
       contents: prompt,
