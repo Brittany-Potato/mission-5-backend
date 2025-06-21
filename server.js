@@ -5,6 +5,7 @@ const port = "3000";
 const { MongoClient } = require("mongodb");
 const dotenv = require('dotenv');
 const { GoogleGenAI } = require("@google/genai");
+const cors = require('cors');
 
 require('dotenv').config();
 
@@ -15,7 +16,10 @@ const ai_url = process.env.AI_url;
 
 
 //* ~ Middleware to parse JSON requests. ~
+
+app.use(cors());
 app.use(express.json());
+
 
 //* ~ Simple GET endpoint. ~
 app.get("/hello", (req, res) => {
@@ -32,7 +36,8 @@ app.post("/echo", (req, res) => {
 
 //? ~ Brittany ~
 
-app.post("/homepageSearch",  async(req, res) => {
+app.post("/homepageSearch", async (req, res) => {
+  console.log("Search request received:", req.body);
   const searchText = req.body.search;
   if (!searchText) {
     return res.status(400).json({ error: "Search text is required" });
@@ -42,6 +47,11 @@ app.post("/homepageSearch",  async(req, res) => {
   try {
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
+
+    if (typeof searchText !== 'string' || searchText.trim().length < 2) {
+      console.log("Invalid searchText, returning empty result");
+      return res.json([]) // Checking if the user typed something useful or skipping the AI step
+    }
 
     const mongoQueryString = await queryToMongo(searchText);
     console.log("Generated MongoDB query string:", mongoQueryString);
@@ -62,7 +72,7 @@ app.post("/homepageSearch",  async(req, res) => {
   async function queryToMongo(searchPrompt) {
     const genAI = new GoogleGenAI({ apiKey: ai_api });
 
-const prompt = `You are an expert MongoDB query builder.
+    const prompt = `You are an expert MongoDB query builder.
 
 Your task is to generate a valid MongoDB filter (no projection, no sort) for the following data model:
 
@@ -113,30 +123,39 @@ Expected JSON output:
 }
 
 User input: "${searchPrompt}"`
-const result = await genAI.models.generateContent({
-  model: "gemini-1.5-pro",
-  contents: prompt,
-  config: {
-    temperature: 0.7,
-    // pass your text prompt here:
-    text: prompt + '\nInput: "' + searchPrompt + '"',
-  },
-});
+    const result = await genAI.models.generateContent({
+      model: "gemini-1.5-pro",
+      contents: prompt,
+      config: {
+        temperature: 0.7,
+        // pass your text prompt here:
+        text: prompt + '\nInput: "' + searchPrompt + '"',
+      },
+    });
 
-      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-      if (!text) {
-        throw new Error("Ai response is undefined or empty");
-      }
+    if (!text) {
+      throw new Error("Ai response is undefined or empty");
+    }
+
+    // console.log("Generated MongoDB query string:", mongoQueryString);
 
 
-      const cleaned = text
+    const cleaned = text
       .replace(/```(json|js)?/g, "")
       .replace(/\\(?!["\\/bfrtu])/g, "\\\\")
       .trim();
 
-      console.log(`Cleaned JSON string:`, cleaned);
-      return cleaned;
+    console.log(`Cleaned JSON string:`, cleaned);
+
+    const mongoQuery = JSON.parse(cleaned);
+    console.log("MongoDB query:", mongoQuery);
+
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    const results = await collection.find(mongoQuery).toArray();
+    return res.json(results);
   };
 
 })
