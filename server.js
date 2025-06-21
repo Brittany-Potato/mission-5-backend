@@ -62,39 +62,57 @@ app.post("/homepageSearch",  async(req, res) => {
   async function queryToMongo(searchPrompt) {
     const genAI = new GoogleGenAI({ apiKey: ai_api });
 
-const prompt = `
-Generate a MongoDB query filter (not projection) for use in collection.find(<query>) to retrieve full documents.
+const prompt = `You are an expert MongoDB query builder.
 
-Input:
-- A user's search phrase (e.g., "antique chair under $300").
+Your task is to generate a valid MongoDB filter (no projection, no sort) for the following data model:
 
-Database Notes:
-- Titles are stored in the 'Title' field.
-- Prices are stored in the 'Price' field as **strings**, e.g., "$250", not numbers.
-- Use case-insensitive regex to match title words.
-- For price filtering:
-  - Extract the number from 'Price' string using regex in the MongoDB query.
-  - Match prices using regex to simulate comparisons:
-    - "under $300" ➜ Match strings like "$0" to "$299"
-    - "over $100" ➜ Match strings like "$101" and above
-    - "between $50 and $150" ➜ Match strings from "$50" to "$150"
+MongoDB documents are stored in the "auctionData" collection. Each document has these fields:
+
+- Title: string (e.g., "Antique Wooden Chair")
+- Location: string (e.g., "London")
+- Condition: string (e.g., "Good", "Fair", "New")
+- Payment: string (e.g., "PayPal")
+- Shipping: string (e.g., "Worldwide", "NZ only")
+- Price: string, with a dollar sign (e.g., "$250")
+- Clearance: string, either "True" or "False"
 
 Instructions:
-- Use '$and' to combine multiple regex matches on 'Title'.
-- For price matching, use '$regex' on the 'Price' field.
-- Only return a valid JSON query filter, no markdown, no extra text.
-- Your result must be parseable JSON starting with '{'.
 
-Example:
-"antique chair under $300" ➜
+1. Analyze the user's natural language input and extract keywords related to any of the fields above.
+2. For each keyword:
+   - If it refers to a field (e.g., "PayPal" ➜ Payment), match that field using a case-insensitive "$regex".
+   - Combine multiple conditions using "$and".
+
+3. Price handling:
+   - "under $300" ➜ match "Price" values where the numeric part is <= 300 using regex.
+   - "over $100" ➜ match where numeric part is >= 100.
+   - "between $50 and $150" ➜ match values in that range.
+   - Since Price is a string like "$250", use regex to simulate number ranges.
+   - Example: { "Price": { "$regex": "^\\$([1-9][0-9]{0,2})$", "$options": "i" } }
+
+4. Clearance:
+   - If the phrase includes "clearance", match { "Clearance": "True" }
+
+5. Always return a valid, clean JSON object that can be passed directly into MongoDB's collection.find() as the filter.
+
+6. Do not include markdown, code blocks, or any explanation — only return the JSON.
+
+Example user input:
+"antique chair under $300 in London with PayPal shipping"
+
+Expected JSON output:
 {
   "$and": [
     { "Title": { "$regex": "antique", "$options": "i" } },
     { "Title": { "$regex": "chair", "$options": "i" } },
-    { "Price": { "$regex": "^\\$([12]?\\d{1,2})$", "$options": "i" } }
+    { "Location": { "$regex": "London", "$options": "i" } },
+    { "Payment": { "$regex": "PayPal", "$options": "i" } },
+    { "Shipping": { "$regex": "shipping", "$options": "i" } },
+    { "Price": { "$regex": "^\\$([1-9][0-9]{0,2}|300)$", "$options": "i" } }
   ]
 }
-`;
+
+User input: "${searchPrompt}"`
 const result = await genAI.models.generateContent({
   model: "gemini-1.5-pro",
   contents: prompt,
@@ -105,13 +123,21 @@ const result = await genAI.models.generateContent({
   },
 });
 
-      const text = result.candidates[0].content.parts[0].text.trim();
+      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-      return text
+      if (!text) {
+        throw new Error("Ai response is undefined or empty");
+      }
+
+
+      const cleaned = text
       .replace(/```(json|js)?/g, "")
-      .replace(/```/g, "")
+      .replace(/\\(?!["\\/bfrtu])/g, "\\\\")
       .trim();
-  }
+
+      console.log(`Cleaned JSON string:`, cleaned);
+      return cleaned;
+  };
 
 })
 
