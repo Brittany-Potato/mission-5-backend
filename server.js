@@ -215,6 +215,31 @@ User input: "${searchPrompt}"`
 
 //? ~ Afton ~
 
+app.get("/product/:id", async (req, res) => {
+  const productId = req.params.id;
+
+  if (!MondoClient.isValidObjectId(productId)) {
+    return res.status(400).json({ error: "Invalid product ID format" });
+  }
+
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    const product = await collection.findOne({ _id: new MongoClient.ObjectId(productId) });
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json(product);
+  } catch (err) {
+    console.error("Error fetching product:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    await client.close();
+  }
+}); 
 
 
 
