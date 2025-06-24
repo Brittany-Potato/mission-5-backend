@@ -203,8 +203,27 @@ User input: "${searchPrompt}"`
     const results = await collection.find(mongoQuery).toArray();
     return res.json(results);
   };
-
 })
+
+app.get("/randomProducts", async (req, res) => {
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    //Return 10 random products
+    const products = await collection.aggregate([
+      { $sample: { size: 10} }
+    ]).toArray();
+
+    res.json(products);
+  } catch (err) {
+    console.error("Failed to fetch products:", err.message);
+    res.status(500).json({ error: "Failed to fetch products"});
+  } finally {
+    await client.close();
+  }
+});
 
 
 //? ~ Teancum ~
