@@ -129,7 +129,7 @@ Instructions:
   - Example: { "Price": { "$regex": "^\\$([1-9][0-9]{0,2})$", "$options": "i" } }
 
 4. Clearance:
-   - If the phrase includes "clearance", match { "Clearance": "True" }
+   - If the phrase includes "clearance", match { "Clearance": "True" } or  { "Clearance": "false" } depending on what the mongodb says the clearance is.
 
 5. Always return a valid, clean JSON object that can be passed directly into MongoDB's collection.find() as the filter.
 
