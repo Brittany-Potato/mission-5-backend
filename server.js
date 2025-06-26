@@ -2,7 +2,7 @@
 const express = require("express");
 const app = express();
 const port = "3000";
-const { MongoClient } = require("mongodb");
+const { MongoClient, ObjectId } = require("mongodb");
 const dotenv = require('dotenv');
 const { GoogleGenAI } = require("@google/genai");
 const cors = require('cors');
@@ -215,9 +215,72 @@ User input: "${searchPrompt}"`
 
 //? ~ Afton ~
 
+// Endpoint to fetch a product by ID
+// This endpoint retrieves a product by its ID from the MongoDB database.
+app.get("/product/:id", async (req, res) => {
+  const productId = req.params.id;
 
+  // Use ObjectId.isValid for validation
+  if (!ObjectId.isValid(productId)) {
+    return res.status(400).json({ error: "Invalid product ID format" });
+  }
 
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
 
+    // Use new ObjectId(productId) for the query
+    const product = await collection.findOne({ _id: new ObjectId(productId) });
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json(product);
+  } catch (err) {
+    console.error("Error fetching product:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    await client.close();
+  }
+});
+
+// Endpoint to fetch similar products based on the current product's title and location
+// This endpoint retrieves similar products based on the first word of the current product's title and its
+app.get("/product/:id/similar", async (req, res) => {
+  const productId = req.params.id;
+  const client = new MongoClient("mongodb://localhost:27017");
+
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    // Use new ObjectId(productId) for the query
+    const currentproduct = await collection.findOne({ _id: new ObjectId(productId) });
+    if (!currentproduct) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const keyword = currentproduct.Title.split(" ")[0]; // Use the first word of the title as a keyword
+    
+    const similarProducts = await collection.find({
+      Title: { $regex: keyword, $options: "i" }, // Case-insensitive search
+      _id: { $ne: new ObjectId(productId) }, // Exclude the current product
+      $or: [
+        { Location: currentproduct.Location },
+      ] 
+    })
+    .limit(4) // Limit to 4 similar products
+    .toArray();
+
+    res.json(similarProducts);
+  } catch (err) {
+    console.error("Error fetching similar products:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    await client.close();
+  }
+});
 
 //* ~ Start the server. ~
 app.listen(port, () => {
