@@ -49,7 +49,7 @@ app.post("/countItems", async (req, res) => {
     const collection = client.db("Phase_2").collection("auctionData");
 
     const count = await collection.countDocuments({ // Counts all the documents that match what the user typed
-      Title: { $regex: title, $options: "i" } // Match case-insensitive
+      Title: { $regex: title, $options: "i" } // Match documents where "Title", contains the query string (case-insensitive)
     });
 
     res.json({ title, count});
@@ -73,7 +73,7 @@ app.post("/homepageSearch", async (req, res) => {
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
-    if (typeof searchText !== 'string' || searchText.trim().length < 2) {
+    if (typeof searchText !== 'string' || searchText.trim().length < 2) { // Skip AI call is search input is too short or invalid
       console.log("Invalid searchText, returning empty result");
       return res.json([]) // Checking if the user typed something useful or skipping the AI step
     }
@@ -83,7 +83,7 @@ app.post("/homepageSearch", async (req, res) => {
 
     console.log("AI returned:", mongoQueryString);
 
-    const query = JSON.parse(mongoQueryString);
+    const query = JSON.parse(mongoQueryString); // Convert he AI-generated string into a mongodb query object
     const docs = await collection.find(query).toArray();
 
     return res.json({
@@ -182,7 +182,7 @@ User input: "${searchPrompt}"`
     const text = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!text) {
-      throw new Error("Ai response is undefined or empty");
+      throw new Error("Ai response is undefined or empty"); // Check for empty AI response before attempting to parse
     }
 
     // console.log("Generated MongoDB query string:", mongoQueryString);
@@ -191,7 +191,7 @@ User input: "${searchPrompt}"`
     const cleaned = text
       .replace(/```(json|js)?/g, "")
       .replace(/\\(?!["\\/bfrtu])/g, "\\\\")
-      .trim();
+      .trim(); // Clean up AI response: remove markdown/code blocks and fix backslash escaping
 
     console.log(`Cleaned JSON string:`, cleaned);
 
@@ -222,7 +222,7 @@ app.get("/randomProducts", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch products"});
   } finally {
     await client.close();
-  }
+  } // Return 10 Random products using Mongo's $sample aggregation
 });
 
 
