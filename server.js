@@ -209,9 +209,52 @@ User input: "${searchPrompt}"`
 
 //? ~ Teancum ~
 
+app.get("/randomProducts", async (req, res) => {
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
 
+    const randomItems = await collection.aggregate([{ $sample: { size: 5 } }]).toArray();
 
+    res.json({ results: randomItems });
+  } catch (err) {
+    console.error("Error fetching random products:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    await client.close();
+  }
+});
 
+app.post("/teancumSearch", async (req, res) => {
+  const { search } = req.body;
+
+  if (!search || typeof search !== "string" || search.trim().length < 2) {
+    return res.json({ results: [] });
+  }
+
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    const query = {
+      $or: [
+        { title: { $regex: search, $options: "i" } },
+        { brand: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } }
+      ]
+    };
+
+    const results = await collection.find(query).limit(5).toArray();
+    res.json({ results });
+  } catch (err) {
+    console.error("Teancum Search Error:", err.message);
+    res.status(500).json({ error: "Internal error" });
+  } finally {
+    await client.close();
+  }
+});
 
 //? ~ Afton ~
 
