@@ -185,12 +185,17 @@ User input: "${searchPrompt}"`
 
 //? ~ Teancum ~
 
+<<<<<<< HEAD
 app.get("/generateListings", async (req, res) => {
+=======
+app.get("/randomProducts", async (req, res) => {
+>>>>>>> 0780715 (WIP: commit before pulling Teancum)
   const client = new MongoClient("mongodb://localhost:27017");
   try {
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
+<<<<<<< HEAD
     const listings = await collection.find().limit(10).toArray();
     res.json({ listings });
   } catch (err) {
@@ -244,6 +249,46 @@ app.post("/generateListings", async (req, res) => {
   } catch (error) {
     console.error("Error generating listings:", error.message);
     res.status(500).json({ error: "Failed to generate listings" });
+=======
+    const randomItems = await collection.aggregate([{ $sample: { size: 5 } }]).toArray();
+
+    res.json({ results: randomItems });
+  } catch (err) {
+    console.error("Error fetching random products:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    await client.close();
+  }
+});
+
+app.post("/teancumSearch", async (req, res) => {
+  const { search } = req.body;
+
+  if (!search || typeof search !== "string" || search.trim().length < 2) {
+    return res.json({ results: [] });
+  }
+
+  const client = new MongoClient("mongodb://localhost:27017");
+  try {
+    await client.connect();
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    const query = {
+      $or: [
+        { title: { $regex: search, $options: "i" } },
+        { brand: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } }
+      ]
+    };
+
+    const results = await collection.find(query).limit(5).toArray();
+    res.json({ results });
+  } catch (err) {
+    console.error("Teancum Search Error:", err.message);
+    res.status(500).json({ error: "Internal error" });
+  } finally {
+    await client.close();
+>>>>>>> 0780715 (WIP: commit before pulling Teancum)
   }
 });
 
