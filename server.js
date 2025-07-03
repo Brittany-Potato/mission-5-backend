@@ -228,7 +228,8 @@ app.get("/randomProducts", async (req, res) => {
 
 //? ~ Teancum ~
 
-app.get("/randomProducts", async (req, res) => {
+
+app.get("/teancumRandomProducts", async (req, res) => {
   const client = new MongoClient("mongodb://localhost:27017");
   try {
     await client.connect();
@@ -245,8 +246,10 @@ app.get("/randomProducts", async (req, res) => {
   }
 });
 
+
 app.post("/teancumSearch", async (req, res) => {
   const { search } = req.body;
+
 
   if (!search || typeof search !== "string" || search.trim().length < 2) {
     return res.json({ results: [] });
