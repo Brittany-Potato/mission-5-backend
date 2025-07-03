@@ -228,65 +228,50 @@ app.get("/randomProducts", async (req, res) => {
 
 //? ~ Teancum ~
 
-app.get("/generateListings", async (req, res) => {
+app.get("/randomProducts", async (req, res) => {
   const client = new MongoClient("mongodb://localhost:27017");
   try {
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
-    const listings = await collection.find().limit(10).toArray();
-    res.json({ listings });
+    const randomItems = await collection.aggregate([{ $sample: { size: 5 } }]).toArray();
+
+    res.json({ results: randomItems });
   } catch (err) {
-    console.error("Error fetching listings:", err.message);
-    res.status(500).json({ error: "Failed to fetch listings" });
+    console.error("Error fetching random products:", err.message);
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     await client.close();
   }
 });
 
-app.post("/generateListings", async (req, res) => {
-  const { prompt } = req.body;
+app.post("/teancumSearch", async (req, res) => {
+  const { search } = req.body;
 
-  if (!prompt || typeof prompt !== "string") {
-    return res.status(400).json({ error: "Prompt is required" });
+  if (!search || typeof search !== "string" || search.trim().length < 2) {
+    return res.json({ results: [] });
   }
 
+  const client = new MongoClient("mongodb://localhost:27017");
   try {
-    const genAI = new GoogleGenAI({ apiKey: ai_api });
-
-    const result = await genAI.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: {
-        role: "user",
-        parts: [
-          {
-            text: `Generate 2 auction listing objects for this prompt: "${prompt}". Include fields: title, price, condition, feature (as an array of strings), description, dimension, weight, color, review, shipping, payment, brand. Respond in JSON only, with no explanation.`,
-          },
-        ],
-      },
-    });
-
-    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return res.status(500).json({ error: "Empty AI response" });
-
-    const cleaned = text
-      .replace(/```(json)?/g, "")
-      .replace(/^\s*\n/gm, "")
-      .trim();
-
-    const listings = JSON.parse(cleaned);
-    const client = new MongoClient("mongodb://localhost:27017");
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
-    await collection.insertMany(listings);
+    const query = {
+      $or: [
+        { title: { $regex: search, $options: "i" } },
+        { brand: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } }
+      ]
+    };
 
+    const results = await collection.find(query).limit(5).toArray();
+    res.json({ results });
+  } catch (err) {
+    console.error("Teancum Search Error:", err.message);
+    res.status(500).json({ error: "Internal error" });
+  } finally {
     await client.close();
-
-    res.json(listings);
-  } catch (error) {
-    console.error("Error generating listings:", error.message);
-    res.status(500).json({ error: "Failed to generate listings" });
   }
 });
 
