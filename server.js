@@ -6,7 +6,6 @@ const { MongoClient, ObjectId } = require("mongodb");
 const dotenv = require('dotenv');
 const { GoogleGenAI } = require("@google/genai");
 const cors = require('cors');
-const teancumAIListings = require("./routes/teancumAIListings");
 
 require('dotenv').config();
 
@@ -20,7 +19,7 @@ const ai_url = process.env.AI_url;
 
 app.use(cors());
 app.use(express.json());
-app.use("/teancumAIListings", teancumAIListings);
+
 
 //* ~ Simple GET endpoint. ~
 app.get("/hello", (req, res) => {
@@ -50,7 +49,7 @@ app.post("/countItems", async (req, res) => {
     const collection = client.db("Phase_2").collection("auctionData");
 
     const count = await collection.countDocuments({ // Counts all the documents that match what the user typed
-      Title: { $regex: title, $options: "i" } // Match case-insensitive
+      Title: { $regex: title, $options: "i" } // Match documents where "Title", contains the query string (case-insensitive)
     });
 
     res.json({ title, count});
@@ -63,9 +62,8 @@ app.post("/countItems", async (req, res) => {
 
 
 app.post("/homepageSearch", async (req, res) => {
-  console.log("📨 Search request received:", req.body);
+  console.log("Search request received:", req.body);
   const searchText = req.body.search;
-
   if (!searchText) {
     return res.status(400).json({ error: "Search text is required" });
   }
@@ -75,62 +73,67 @@ app.post("/homepageSearch", async (req, res) => {
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
-    if (typeof searchText !== 'string' || searchText.trim().length < 2) {
-      console.log("⚠️ Invalid search input, returning empty array");
-      return res.json([]); // skip if input is too short
+    if (typeof searchText !== 'string' || searchText.trim().length < 2) { // Skip AI call is search input is too short or invalid
+      console.log("Invalid searchText, returning empty result");
+      return res.json([]) // Checking if the user typed something useful or skipping the AI step
     }
 
-    const mongoQuery = await queryToMongo(searchText);
-    console.log("🧠 AI generated MongoDB query:", mongoQuery);
+    const mongoQueryString = await queryToMongo(searchText);
+    console.log("Generated MongoDB query string:", mongoQueryString);
 
-    const results = await collection.find(mongoQuery).limit(5).toArray();
+    console.log("AI returned:", mongoQueryString);
+
+    const query = JSON.parse(mongoQueryString); // Convert he AI-generated string into a mongodb query object
+    const docs = await collection.find(query).toArray();
+
     return res.json({
-      count: results.length,
-      results: results,
+      count: docs.length,
+      results: docs,
     });
   } catch (err) {
-    console.error("❌ Error processing search:", err.message);
-    return res.status(500).json({ error: "Search processing failed" });
-  } finally {
-    await client.close();
+    console.error("Error processing search:", err.message);
   }
-});
 
   async function queryToMongo(searchPrompt) {
     const genAI = new GoogleGenAI({ apiKey: ai_api });
 
-const prompt = `You are an expert MongoDB query builder.
+    const prompt = `You are an expert MongoDB query builder.
 
 Your task is to generate a valid MongoDB filter (no projection, no sort) for the following data model:
 
 MongoDB documents are stored in the "auctionData" collection. Each document has these fields:
 
-- title: string (e.g., "Antique Wooden Chair")
-- location: string (e.g., "London")
-- condition: string (e.g., "Good", "Fair", "New")
-- payment: string (e.g., "PayPal")
-- shipping: string (e.g., "Worldwide", "NZ only")
-- price: number (e.g., 250)
-- clearance: string, either "True" or "False"
+- Title: string (e.g., "Antique Wooden Chair")
+- Location: string (e.g., "London")
+- Condition: string (e.g., "Good", "Fair", "New")
+- Payment: string (e.g., "PayPal")
+- Shipping: string (e.g., "Worldwide", "NZ only")
+- Price: string, with a dollar sign (e.g., "$250")
+- Clearance: string, either "True" or "False"
 
 Instructions:
 
 1. Analyze the user's natural language input and extract keywords related to any of the fields above.
 2. For each keyword:
-   - If it refers to a field (e.g., "PayPal" ➜ payment), match that field using a case-insensitive "$regex".
+   - If it refers to a field (e.g., "PayPal" ➜ Payment), match that field using a case-insensitive "$regex".
    - Combine multiple conditions using "$and".
 
-3. Price handling:
-  - If the user says "under $300", generate: { "price": { "$lt": 300 } }
-  - If they say "over $500", use: { "price": { "$gte": 500 } }
-  - If they say "between $100 and $200", use: { "price": { "$gte": 100, "$lte": 200 } }
+3. IMPORTANT Price handling:
+  - "over $200" ➜ match "Price" values where the numeric part is >= 200 using regex.
+  - "between $50 and $100" ➜ match values in that range.
+  - "between $100 and $200" ➜ match values in that range, For $100–$200, use:
+      { "Price": { "$regex": "^\\$(1[0-9]{2}|200)$", "$options": "i" } }
+
+  - "between $0 and $50" ➜ match values in that range.
+  - Since Price is a string like "$250", use regex to simulate number ranges.
+  - Example: { "Price": { "$regex": "^\\$([1-9][0-9]{0,2})$", "$options": "i" } }
 
 4. Clearance:
-   - If the phrase includes "clearance", match: { "clearance": "True" }
+   - If the phrase includes "clearance", match { "Clearance": "True" } or  { "Clearance": "false" } depending on what the mongodb says the clearance is.
 
-5. Only return a clean JSON object that can be used directly as a MongoDB filter in collection.find().
+5. Always return a valid, clean JSON object that can be passed directly into MongoDB's collection.find() as the filter.
 
-6. Do NOT include markdown, code blocks, or explanation — just the JSON object.
+6. Do not include markdown, code blocks, or any explanation — only return the JSON.
 
 Example user input:
 "antique chair under $300 in London with PayPal shipping"
@@ -138,17 +141,33 @@ Example user input:
 Expected JSON output:
 {
   "$and": [
-    { "title": { "$regex": "antique", "$options": "i" } },
-    { "title": { "$regex": "chair", "$options": "i" } },
-    { "location": { "$regex": "London", "$options": "i" } },
-    { "payment": { "$regex": "PayPal", "$options": "i" } },
-    { "shipping": { "$regex": "shipping", "$options": "i" } },
-    { "price": { "$lt": 300 } }
+    { "Title": { "$regex": "antique", "$options": "i" } },
+    { "Title": { "$regex": "chair", "$options": "i" } },
+    { "Location": { "$regex": "London", "$options": "i" } },
+    { "Payment": { "$regex": "PayPal", "$options": "i" } },
+    { "Shipping": { "$regex": "shipping", "$options": "i" } },
+    { "Price": { "$regex": "^\\$(1[0-9]{2}|200)$", "$options": "i" } }
   ]
 }
+  The regular expressions you're generating (e.g., ^\$([5-9][0-9]|100)$) are correct in terms of logic, but invalid JSON strings due to unescaped backslashes.
+
+  This is a correct response as an example: {
+  "$and": [
+    {
+      "Price": {
+        "$regex": "^\\$([5-9][0-9]|100)$",  // Match $100–$200 <-- NO EXTRA BACKSLASHES PLEASE
+        "$options": "i"
+      }
+    }
+  ]
+}
+Do NOT use too many backslashes like in this example: "Price": {"$regex": "^\\\$([1-9][0-9]{2}|[1-1][0-9]{2}|200)$", "$options": "i"}
+
+Do NOT repeat the mistake of overlapping or incorrect ranges like: [1-9][0-9]{2}|[1-1][0-9]{2}|200 .
+
+Escape your backslashes where necessary.
 
 User input: "${searchPrompt}"`
-
 
     const result = await genAI.models.generateContent({
       model: "gemini-1.5-pro",
@@ -163,7 +182,7 @@ User input: "${searchPrompt}"`
     const text = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!text) {
-      throw new Error("Ai response is undefined or empty");
+      throw new Error("Ai response is undefined or empty"); // Check for empty AI response before attempting to parse
     }
 
     // console.log("Generated MongoDB query string:", mongoQueryString);
@@ -172,86 +191,50 @@ User input: "${searchPrompt}"`
     const cleaned = text
       .replace(/```(json|js)?/g, "")
       .replace(/\\(?!["\\/bfrtu])/g, "\\\\")
-      .trim();
+      .trim(); // Clean up AI response: remove markdown/code blocks and fix backslash escaping
 
     console.log(`Cleaned JSON string:`, cleaned);
 
     const mongoQuery = JSON.parse(cleaned);
     console.log("MongoDB query:", mongoQuery);
 
-    return mongoQuery;
+    const collection = client.db("Phase_2").collection("auctionData");
+
+    const results = await collection.find(mongoQuery).toArray();
+    return res.json(results);
   };
+})
 
-
-//? ~ Teancum ~
-
-<<<<<<< HEAD
-app.get("/generateListings", async (req, res) => {
-=======
 app.get("/randomProducts", async (req, res) => {
->>>>>>> 0780715 (WIP: commit before pulling Teancum)
   const client = new MongoClient("mongodb://localhost:27017");
   try {
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
-<<<<<<< HEAD
-    const listings = await collection.find().limit(10).toArray();
-    res.json({ listings });
+    //Return 10 random products
+    const products = await collection.aggregate([
+      { $sample: { size: 10} }
+    ]).toArray();
+
+    res.json(products);
   } catch (err) {
-    console.error("Error fetching listings:", err.message);
-    res.status(500).json({ error: "Failed to fetch listings" });
+    console.error("Failed to fetch products:", err.message);
+    res.status(500).json({ error: "Failed to fetch products"});
   } finally {
     await client.close();
-  }
+  } // Return 10 Random products using Mongo's $sample aggregation
 });
 
-app.post("/generateListings", async (req, res) => {
-  const { prompt } = req.body;
 
-  if (!prompt || typeof prompt !== "string") {
-    return res.status(400).json({ error: "Prompt is required" });
-  }
+//? ~ Teancum ~
 
+app.get("/teancumRandomProducts", async (req, res) => {
+  const client = new MongoClient("mongodb://localhost:27017");
   try {
-    const genAI = new GoogleGenAI({ apiKey: ai_api });
-
-    const result = await genAI.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: {
-        role: "user",
-        parts: [
-          {
-            text: `Generate 2 auction listing objects for this prompt: "${prompt}". Include fields: title, price, condition, feature (as an array of strings), description, dimension, weight, color, review, shipping, payment, brand. Respond in JSON only, with no explanation.`,
-          },
-        ],
-      },
-    });
-
-    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return res.status(500).json({ error: "Empty AI response" });
-
-    const cleaned = text
-      .replace(/```(json)?/g, "")
-      .replace(/^\s*\n/gm, "")
-      .trim();
-
-    const listings = JSON.parse(cleaned);
-    const client = new MongoClient("mongodb://localhost:27017");
     await client.connect();
     const collection = client.db("Phase_2").collection("auctionData");
 
-    await collection.insertMany(listings);
-
-    await client.close();
-
-    res.json(listings);
-  } catch (error) {
-    console.error("Error generating listings:", error.message);
-    res.status(500).json({ error: "Failed to generate listings" });
-=======
     const randomItems = await collection.aggregate([{ $sample: { size: 5 } }]).toArray();
-
     res.json({ results: randomItems });
   } catch (err) {
     console.error("Error fetching random products:", err.message);
@@ -260,6 +243,7 @@ app.post("/generateListings", async (req, res) => {
     await client.close();
   }
 });
+
 
 app.post("/teancumSearch", async (req, res) => {
   const { search } = req.body;
@@ -288,7 +272,6 @@ app.post("/teancumSearch", async (req, res) => {
     res.status(500).json({ error: "Internal error" });
   } finally {
     await client.close();
->>>>>>> 0780715 (WIP: commit before pulling Teancum)
   }
 });
 
