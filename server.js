@@ -228,6 +228,7 @@ app.get("/randomProducts", async (req, res) => {
 
 //? ~ Teancum ~
 
+
 app.get("/teancumRandomProducts", async (req, res) => {
   const client = new MongoClient("mongodb://localhost:27017");
   try {
@@ -235,6 +236,7 @@ app.get("/teancumRandomProducts", async (req, res) => {
     const collection = client.db("Phase_2").collection("auctionData");
 
     const randomItems = await collection.aggregate([{ $sample: { size: 5 } }]).toArray();
+
     res.json({ results: randomItems });
   } catch (err) {
     console.error("Error fetching random products:", err.message);
@@ -247,6 +249,7 @@ app.get("/teancumRandomProducts", async (req, res) => {
 
 app.post("/teancumSearch", async (req, res) => {
   const { search } = req.body;
+
 
   if (!search || typeof search !== "string" || search.trim().length < 2) {
     return res.json({ results: [] });
